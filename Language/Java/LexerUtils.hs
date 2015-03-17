@@ -1,5 +1,8 @@
 module Language.Java.LexerUtils(L(..),
                                 Pos(..),
+                                LexError(..),
+                                ParseError(..),
+                                lexicalError,
                                 pickyReadOct,
                                 readHexExp,
                                 readStringTok,
@@ -10,6 +13,7 @@ import Data.Char
 import Data.Either
 import Numeric
 
+type ParseError a = Either String a
 type LexError a = Either String a
 
 pickyReadOct :: String -> LexError Integer

@@ -32,11 +32,12 @@ module Language.Java.Parser (
 
     ) where
 
-import Language.Java.Lexer ( L(..), Token(..), lexer)
-import Language.Java.Syntax
+import Language.Java.Lexer
+import Language.Java.LexerUtils hiding (L(..))
 import Language.Java.Pretty (pretty)
+import Language.Java.Syntax
 
-import Text.Parsec hiding ( Empty )
+import Text.Parsec hiding ( Empty, ParseError )
 import Text.Parsec.Pos
 
 import Prelude hiding ( exp, catch, (>>), (>>=) )
@@ -68,11 +69,21 @@ infixr 2 >>, >>=
 ----------------------------------------------------------------------------
 -- Top-level parsing
 
-parseCompilationUnit :: String -> Either ParseError CompilationUnit
-parseCompilationUnit inp =
-    runParser compilationUnit () "" (lexer inp)
+parseCompilationUnit :: String -> ParseError CompilationUnit
+parseCompilationUnit inp = case lexer inp of
+  Left err -> Left err
+  Right toks -> case runParser compilationUnit () "" toks of
+    Left e -> Left $ show e
+    Right cUnit -> Right cUnit
+--    runParser compilationUnit () "" (lexer inp)
 
-parser p = runParser p () "" . lexer
+lexCode str = lexer str
+
+parser p str = case lexer str of
+  Left err -> Left err
+  Right toks -> case runParser p () "" toks of
+    Left e -> Left $ show e
+    Right val -> Right val
 
 --class Parse a where
 --  parse :: String -> a
