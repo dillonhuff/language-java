@@ -1,16 +1,22 @@
-module Language.Java.LexerUtils() where
+module Language.Java.LexerUtils(L(..),
+                                Pos(..),
+                                pickyReadOct,
+                                readHexExp,
+                                readStringTok,
+                                readCharTok) where
 
-import Numeric
+import Control.Monad
 import Data.Char
 import Data.Either
+import Numeric
 
 type LexError a = Either String a
 
-pickyReadOct :: String -> Integer
+pickyReadOct :: String -> LexError Integer
 pickyReadOct s =
   if not $ null rem
-  then lexicalError $ "Non-octal digit '" ++ take 1 rem ++ "' in \"" ++ s ++ "\"."
-  else n
+     then lexicalError $ "Non-octal digit '" ++ take 1 rem ++ "' in \"" ++ s ++ "\"."
+     else return n
     where (n,rem) = head $ readOct s
 
 readHexExp :: (Floating a, Eq a) => String -> a
@@ -20,11 +26,11 @@ readHexExp s = let (m, suf) = head $ readHex s
                              _ -> (0, "")
                 in m ** e
 
-readCharTok :: String -> Char
-readCharTok s = head . convChar . dropQuotes $ s
+readCharTok :: String -> LexError Char
+readCharTok s = liftM head $ convChar . dropQuotes $ s
 
-readStringTok :: String -> String
-readStringTok = convChar . dropQuotes
+readStringTok :: String -> LexError String
+readStringTok str = convChar $ dropQuotes str
 
 dropQuotes :: String -> String
 dropQuotes s = take (length s - 2) (tail s)
@@ -35,51 +41,63 @@ dropQuotes s = take (length s - 2) (tail s)
 -- the lexer rules for character and string literals. This function
 -- could be expressed as another Alex lexer, but it's simple enough
 -- to implement by hand.
-convChar :: String -> String
+convChar :: String -> LexError String
 convChar ('\\':'u':s@(d1:d2:d3:d4:s')) =
   -- TODO: this is the wrong place for handling unicode escapes
   -- according to the Java Language Specification. Unicode escapes can
   -- appear anywhere in the source text, and are best processed
   -- before lexing.
   case all isHexDigit [d1,d2,d3,d4] of
-    True -> toEnum (read ['0','x',d1,d2,d3,d4]):convChar s'
+    True -> do
+      res <- convChar s'
+      return $ toEnum (read ['0','x',d1,d2,d3,d4]):res -- convChar s'
     False -> lexicalError $ "bad unicode escape \"\\u" ++ take 4 s ++ "\""
 convChar ('\\':'u':s) =
   lexicalError $ "bad unicode escape \"\\u" ++ take 4 s ++ "\""
 convChar ('\\':c:s) =
   case isOctDigit c of
     True -> convOctal maxRemainingOctals
-    False -> (escChar c):(convChar s)
+    False -> do
+      res <- convChar s
+      eChar <- escChar c
+      return $ eChar:res -- (convChar s)
   where maxRemainingOctals =
           if c <= '3' then 2 else 1
         convOctal n =
           let octals = takeWhile isOctDigit $ take n s
               noctals = length octals
               toChar = toEnum . fst . head . readOct
-          in toChar (c:octals):convChar (drop noctals s)
+          in
+           do
+             res <- convChar (drop noctals s)
+             return $ toChar (c:octals):res  --convChar (drop noctals s)
         badEscape = lexicalError $ "bad escape \"\\" ++ c:"\""
 convChar ("\\") =
   lexicalError "bad escape \"\\\""
-convChar (x:s) = x:convChar s
-convChar "" = ""
+convChar (x:s) = do
+  res <- convChar s
+  return $ x:res --convChar s
+convChar "" = return ""
 
+escChar :: Char -> LexError Char
 escChar c = case c of
-  'b' -> '\b'
-  'f' -> '\f'
-  'n' -> '\n'
-  'r' -> '\r'
-  't' -> '\t'
-  '\'' -> '\''
-  '\\' -> '\\'
-  '"' -> '"'
+  'b' -> return '\b'
+  'f' -> return '\f'
+  'n' -> return '\n'
+  'r' -> return '\r'
+  't' -> return '\t'
+  '\'' -> return '\''
+  '\\' -> return '\\'
+  '"' -> return '"'
   _ -> lexicalError $ "bad escape \"\\" ++ (c : "\"")
   
 
-lexicalError :: String -> a
-lexicalError = error . ("DILLON LEXER lexical error: " ++)
+lexicalError :: String -> LexError a
+lexicalError str = fail ("DILLON LEXER lexical error: " ++ str)
 
 data L a = L Pos a
   deriving (Show, Eq)
 
--- (line, column)
-type Pos = (Int, Int)
+type Line = Int
+type Column = Int
+type Pos = (Line, Column)
